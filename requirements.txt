@@ -1,0 +1,11 @@
+torch>=2.2
+torchvision
+monai>=1.3
+nibabel
+simpleitk
+scikit-image
+tqdm
+torchmetrics
+numpy
+matplotlib
+thop

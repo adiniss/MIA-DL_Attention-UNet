@@ -1,0 +1,21 @@
+data:
+  images_dir: ""
+  labels_dir: ""
+  size: 256
+  k_slices: 1
+  split_ratio: [0.8, 0.1, 0.1]
+  seed: 0
+
+model:
+  in_channels: ${data.k_slices}
+  out_channels: 1
+  base_ch: 32
+  num_heads: 1
+
+train:
+  batch_size: 8
+  epochs: 20
+  lr: 1e-3
+  amp: true
+
+out_dir: "./runs/exp"

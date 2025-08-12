@@ -1,0 +1,20 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+env/
+*.egg-info/
+
+# notebooks
+.ipynb_checkpoints/
+
+# outputs
+runs/
+outputs/
+logs/
+wandb/
+*.pt
+*.pth
+
+# OS
+.DS_Store
