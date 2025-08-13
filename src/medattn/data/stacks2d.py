@@ -1,11 +1,16 @@
-import os, glob, numpy as np
-import nibabel as nib
+import os
+import glob
 import torch
+import numpy as np
+import nibabel as nib
 from torch.utils.data import Dataset
 import torch.nn.functional as functional
 
 '''
 Dataset loader to generate a sequence of 2d images from the MSD Pancreas
+
+- in resize: can create a nearest neighbor version for the labels (more realistic)
+- can possibly add data augmentations (flip. rotate, crop and resize?), but i think for PoC it's enough
 '''
 
 
@@ -37,7 +42,7 @@ class Stacks2D(Dataset):
         imgs = sorted(glob.glob(os.path.join(img_dir, '*.nii*')))
         labels = [os.path.join(label_dir, os.path.basename(image)) for image in imgs]
         # Check for missing labels
-        assert all(os.path.exists(l) for l in labels), "Missing labels"
+        assert all(os.path.exists(lab) for lab in labels), "Missing labels"
 
         # Shuffle at volume level
         rng, idx = np.random.RandomState(seed), np.arange(len(imgs))
@@ -77,8 +82,10 @@ class Stacks2D(Dataset):
         tensor = torch.from_numpy(arr)[None, None, ...]
         # Interpolate the resized tensor [1, 1, self.size, self.size]
         tensor = functional.interpolate(tensor, size=(self.size, self.size), mode='bilinear', align_corners=False)
+        # mode='nearest' would be better for labels, keeping it minimal for now can we can change it
+
         # unwrap tensor back to numpy [size, size]
-        resized_arr = tensor[0,0].numpy()
+        resized_arr = tensor[0, 0].numpy()
         return resized_arr
 
     def __len__(self):
@@ -100,14 +107,18 @@ class Stacks2D(Dataset):
         intensity = nib.load(path_img).get_fdata().astype(np.float32)
         intensity = clip_norm_HU(intensity)
 
-        # Generate stack of length k todo if k==1 skip it?
-        # slices list: if k=5 we need [z-2, z-1, z, z+1, z+2], clip to range [0, image_z_length]
-        half_stack = self.k // 2
-        min_z, max_z = 0, intensity.shape[2] - 1
-        slices_list = [np.clip(z + d, min_z, max_z) for d in range(-half_stack, half_stack + 1)]
+        if self.k == 1:
+            # only resize is needed, by make sure it's 3D in the end
+            volume_stack = self._resize(intensity[..., z])[None, ...]  # [1, H, W]
+        else:  # Generate stack of length k
+            # slices list: if k=5 we need [z-2, z-1, z, z+1, z+2], clip to range [0, image_z_length]
+            half_stack = self.k // 2
+            min_z, max_z = 0, intensity.shape[2] - 1
+            slices_list = [np.clip(z + d, min_z, max_z) for d in range(-half_stack, half_stack + 1)]
 
-        # Resize and stack the slices
-        volume_stack = np.stack([self._resize(intensity[..., zi]) for zi in slices_list], 0)  # [k, H, W]
+            # Resize and stack the slices
+            volume_stack = np.stack([self._resize(intensity[..., zi]) for zi in slices_list], 0)  # [k, H, W]
+
         # Resize label map for the chosen z slice
         slice_label = self._resize(label[..., z]).astype(np.float32)  # [H, W], center slice labels
 
