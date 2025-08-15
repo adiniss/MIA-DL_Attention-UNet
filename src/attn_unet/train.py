@@ -1,23 +1,26 @@
 import os, torch
 from torch.utils.data import DataLoader
 from attn_unet.data.stacks2d import Stacks2D
-from attn_unet.models.attn_unet import AttentionUNet
+from attn_unet.models.atten_unet import AttentionUNet
 from attn_unet.losses.dicece import DiceCE
+
 
 def main():
 
     # Run definitions:
-    images_dir = r""  # todo change to drive?
-    labels_dir = r""  # todo change to drive?
+    images_dir = globals().get("images_dir",
+                               r"/content/drive/MyDrive/MIL-DL_Attention-UNet/Task07_Pancreas_small/imagesTr")
+    labels_dir = globals().get("labels_dir",
+                               r"/content/drive/MyDrive/MIL-DL_Attention-UNet/Task07_Pancreas_small/labelsTr")
     out_dir = r"./runs/debug"
     os.makedirs(out_dir, exist_ok=True)
 
     # Model definitions:
-    k_slices = 5
-    batch_size = 4
-    heads = 4
-    in_channels = 5
-    learning_rate = 1e-3
+    k_slices = globals().get("k_slices", 5)
+    batch_size = globals().get("batch_size", 2)
+    heads = globals().get("heads", 4)
+    in_channels = globals().get("in_channels", 5)
+    learning_rate = globals().get("learning_rate", 1e-3)
 
     # Load images as 2D stacks and get the dataloader
     stacks_train = Stacks2D(images_dir, labels_dir, k_slices=k_slices, split='train')
