@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from multiheaded_gate import MultiHeadAttentionGate
+from attn_unet.models.multiheaded_gate import MultiHeadAttentionGate
 
 
 class ConvBlock(nn.Module):
