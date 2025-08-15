@@ -19,7 +19,7 @@ def main():
     k_slices = globals().get("k_slices", 5)
     batch_size = globals().get("batch_size", 2)
     heads = globals().get("heads", 4)
-    in_channels = globals().get("in_channels", 5)
+    in_channels = k_slices
     learning_rate = globals().get("learning_rate", 1e-3)
 
     # Load images as 2D stacks and get the dataloader
