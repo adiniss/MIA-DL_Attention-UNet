@@ -49,7 +49,7 @@ def main():
     model = AttentionUNet(in_channels=k_slices, num_heads=heads).to(device)
     loss_fn = DiceCE()
     opt = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=1, verbose=False)
+    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=1)
 
     # Initialize best loss, epoch and dice
     best_loss, best_epoch, best_dice = float("inf"), -1, 0.0
@@ -88,6 +88,7 @@ def main():
         print(f"Epoch {epoch} | train {tr_loss:.3f} | val {va_loss:.3f} | dice {va_dice:.3f}")
 
         sched.step(va_loss)
+        print("current LR:", sched.get_last_lr()[0])
         if va_loss < best_loss - 1e-4:
             best_loss, best_epoch, best_dice = va_loss, epoch, va_dice
         if epoch - best_epoch >= patience:
