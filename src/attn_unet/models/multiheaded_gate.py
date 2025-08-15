@@ -38,7 +38,7 @@ class MultiHeadAttentionGate(nn.Module):
 
         # Get head maps and apply sigmoid for [0,1]
         heads = self.psi(alpha).sigmoid()
-        heads = heads.signoid()
+        heads = heads.sigmoid()
 
         # Combine to a single head map and apply sigmoid
         attn = self.combine(heads)
