@@ -17,6 +17,8 @@ class MultiHeadAttentionGate(nn.Module):
                  ):
         super().__init__()
 
+        self.tau = float(tau)
+
         # To project the decoder gate and the encoder's skip to a shared intermediate space (F_int)
         # Using the paper's semantics W_g, W_x
         self.W_g = nn.Conv2d(F_g, F_int, kernel_size=1, bias=True)

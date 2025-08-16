@@ -1,5 +1,4 @@
-import os, torch
-import torch.nn.functional as functional
+import torch
 from torch.utils.data import DataLoader
 from attn_unet.data.stacks2d import Stacks2D
 from attn_unet.models.atten_unet import AttentionUNet
@@ -53,9 +52,6 @@ def main():
 
     # Initialize best loss, epoch and dice
     best_loss, best_epoch, best_dice = float("inf"), -1, 0.0
-
-    # print(f"train: {len(train_ds)} slices")
-    # print(f"val: {len(val_ds)} slices")
 
     # start training
     for epoch in range(max_epochs):
