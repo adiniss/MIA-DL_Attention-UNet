@@ -3,11 +3,10 @@ import torch.nn.functional as functional
 
 '''
 updated version of the multi-headed attention gate with:
-1. softmax over all heads to compete over alignment pixels
+1. softmax over all heads to compete over alignment pixels (maybe wont work)
 2. added dropout
 3. adding regularization to make heads differ? 
 '''
-
 
 class MultiHeadAttentionGate(nn.Module):
     def __init__(self,
