@@ -58,15 +58,15 @@ class AttentionUNet(nn.Module):
         """
 
         self.up4 = nn.ConvTranspose2d(16*c, 8*c, 2, stride=2)
-        self.gate4 = MultiHeadAttentionGate(F_g=8*c, F_l=8*c, F_int=4*c, num_heads=num_heads)
+        self.gate4 = MultiHeadAttentionGate(F_g=8*c, F_l=8*c, F_int=4*c, num_heads=num_heads, tau=1.0, drop_prob=0.1)
         self.dec4 = ConvBlock(16*c, 8*c)
 
         self.up3 = nn.ConvTranspose2d(8*c, 4*c, 2, stride=2)
-        self.gate3 = MultiHeadAttentionGate(F_g=4*c, F_l=4*c, F_int=2*c, num_heads=num_heads)
+        self.gate3 = MultiHeadAttentionGate(F_g=4*c, F_l=4*c, F_int=2*c, num_heads=num_heads, tau=1.0, drop_prob=0.1)
         self.dec3 = ConvBlock(8*c, 4*c)
 
         self.up2 = nn.ConvTranspose2d(4*c, 2*c, 2, stride=2)
-        self.gate2 = MultiHeadAttentionGate(F_g=2*c, F_l=2*c, F_int=c, num_heads=num_heads)
+        self.gate2 = MultiHeadAttentionGate(F_g=2*c, F_l=2*c, F_int=c, num_heads=num_heads, tau=1.0, drop_prob=0.1)
         self.dec2 = ConvBlock(4*c, 2*c)
 
         self.up1 = nn.ConvTranspose2d(2*c, c, 2, stride=2)

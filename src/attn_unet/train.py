@@ -54,8 +54,8 @@ def main():
     # Initialize best loss, epoch and dice
     best_loss, best_epoch, best_dice = float("inf"), -1, 0.0
 
-    print(f"train: {len(train_ds)} slices")
-    print(f"val: {len(val_ds)} slices")
+    # print(f"train: {len(train_ds)} slices")
+    # print(f"val: {len(val_ds)} slices")
 
     # start training
     for epoch in range(max_epochs):
