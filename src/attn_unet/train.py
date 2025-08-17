@@ -81,10 +81,9 @@ def main():
         va_loss = va_loss_sum / max(n, 1)
         va_dice = va_dice_sum / max(n, 1)
 
-        print(f"Epoch {epoch} | train {tr_loss:.3f} | val {va_loss:.3f} | dice {va_dice:.3f}")
-
         sched.step(va_loss)
-        print("current LR:", sched.get_last_lr()[0])
+        print(f"Epoch {epoch} | train {tr_loss:.3f} | val {va_loss:.3f} | dice {va_dice:.3f}        l_r = {sched.get_last_lr()[0]}")
+
         if va_loss < best_loss - 1e-4:
             best_loss, best_epoch, best_dice = va_loss, epoch, va_dice
         if epoch - best_epoch >= patience:
