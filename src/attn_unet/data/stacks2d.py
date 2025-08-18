@@ -26,6 +26,12 @@ def clip_norm_HU(data, low_HU=-150, high_HU=250, epsilon=1e-8):
     return data
 
 
+def binarize_labels(arr):
+    # MSD Pancreas labels: 0 = background, 1 = organ, 2 = tumor (not relevant for Spleen task)
+    # Unite the anatomy labels so we get a segmentation map
+    return (arr > 0).astype(np.uint8)
+
+
 class Stacks2D(Dataset):
     """
     Take PyTorch dataset and create a stack of 2D slices
@@ -45,7 +51,8 @@ class Stacks2D(Dataset):
         assert all(os.path.exists(lab) for lab in labels), "Missing labels"
 
         # Shuffle at volume level
-        rng, idx = np.random.RandomState(seed), np.arange(len(imgs))
+        rng = (np.random.RandomState(seed))
+        idx = rng.permutation(len(imgs))
         n_tr, n_va = int(len(idx) * split_ratio[0]), int(len(idx) * split_ratio[1])
 
         if split == 'train':
@@ -62,27 +69,44 @@ class Stacks2D(Dataset):
         # Store in self.slice_index as (path_img, path_lab, z) list
         self.slice_index = []
         for item_volume, item_label in self.items:
-            # Get data using nibabel
-            intensity_data = nib.load(item_volume).get_fdata().astype(np.float32)
-            label_data = nib.load(item_label).get_fdata().astype(np.uint8)
+            voxel_volume = nib.load(item_volume).get_fdata()
 
-            # Go over the z axis and check for informational labels
-            for z in range(intensity_data.shape[2]):
-                if label_data[..., z].sum() > 0:
-                    # If non-zero, append the specific
-                    self.slice_index.append((item_volume, item_label, z))
-        print(f"{split}: {len(self.slice_index)} slices")
+            for z_idx in range(voxel_volume.shape[2]):
+                self.slice_index.append((item_volume, item_label, z_idx))
 
-    def _resize(self, arr):
+            # previous version to include only non empty slices
+            # # Get data using nibabel
+            # intensity_data = nib.load(item_volume).get_fdata().astype(np.float32)
+            # label_data = nib.load(item_label).get_fdata().astype(np.uint8)
+            #
+            # # Go over the z axis and check for informational labels
+            # for z in range(intensity_data.shape[2]):
+            #     if label_data[..., z].sum() > 0:
+            #         # If non-zero, append the specific
+            #         self.slice_index.append((item_volume, item_label, z))
+        # print(f"{split}: {len(self.slice_index)} slices")
+        print(f"{split}: {len(self.slice_index)} slices (all possible slices)")
+
+    def resize(self, arr, is_label=False):
         """
         Resize 2D slices (intensity or label data) using pytorch interpolate
+        for images: use bilinear mode
+        for labels: use nearest neighbor (keep it binary)
         :param arr: 2D intensity or label data [Height, Width]
         """
         # Convert to PyTorch tensor and add new axes in the beginning since PyTorch expects 4D [1, 1, H, W]
         tensor = torch.from_numpy(arr)[None, None, ...]
-        # Interpolate the resized tensor [1, 1, self.size, self.size]
-        tensor = functional.interpolate(tensor, size=(self.size, self.size), mode='bilinear', align_corners=False)
-        # mode='nearest' would be better for labels, keeping it minimal for now can we can change it
+
+        if is_label:
+            intr_mode = "nearest"
+        else:
+            intr_mode = "bilinear"
+
+        # Interpolate the resized tensor [1, 1, self.size, self.size] (align corners only for bilinear)
+        tensor = functional.interpolate(tensor,
+                                        size=(self.size, self.size),
+                                        mode=intr_mode,
+                                        align_corners=False if intr_mode == 'bilinear' else None)
 
         # unwrap tensor back to numpy [size, size]
         resized_arr = tensor[0, 0].numpy()
@@ -101,15 +125,20 @@ class Stacks2D(Dataset):
         :param i:
         :return: volume_stack [k, H, W], slice_label [1, H, W] (only for chosen slice)
         """
-        # Load full volume and label, clip and normalize intensity
         path_img, path_label, z = self.slice_index[i]
+
+        # Load labels and merge MSD maps to binary
         label = nib.load(path_label).get_fdata().astype(np.uint8)
+        label = binarize_labels(label)
+
+        # Load intensity and clip and normalize intensity
         intensity = nib.load(path_img).get_fdata().astype(np.float32)
         intensity = clip_norm_HU(intensity)
 
         if self.k == 1:
             # only resize is needed, by make sure it's 3D in the end
-            volume_stack = self._resize(intensity[..., z])[None, ...]  # [1, H, W]
+            volume_stack = self.resize(intensity[..., z],
+                                       is_label=False)[None, ...]  # [1, H, W]
         else:  # Generate stack of length k
             # slices list: if k=5 we need [z-2, z-1, z, z+1, z+2], clip to range [0, image_z_length]
             half_stack = self.k // 2
@@ -117,13 +146,18 @@ class Stacks2D(Dataset):
             slices_list = [np.clip(z + d, min_z, max_z) for d in range(-half_stack, half_stack + 1)]
 
             # Resize and stack the slices
-            volume_stack = np.stack([self._resize(intensity[..., zi]) for zi in slices_list], 0)  # [k, H, W]
+            volume_stack = np.stack([self.resize(intensity[..., zi], is_label=False) for zi in slices_list], 0)  # [k, H, W]
 
         # Resize label map for the chosen z slice
-        slice_label = self._resize(label[..., z]).astype(np.float32)  # [H, W], center slice labels
+        slice_label = self.resize(label[..., z], is_label=True).astype(np.float32)  # [H, W], center slice labels
+        slice_label = (slice_label > 0.5).astype(np.float32)
 
         # Convert to equal dim tensors
         volume_stack = torch.from_numpy(volume_stack)  # [k, H, W]
-        slice_label = torch.from_numpy(slice_label)[None]  # [1, H, W]
+        slice_label = torch.from_numpy(slice_label)[None, ...]  # [1, H, W]
+
+        #todo when adding data augmentation for train set
+        #if getattr(self, "split", None) == 'train':
+            # volume_stack, slice_label = self.augment(volume_stack, slice_label)
 
         return volume_stack, slice_label
