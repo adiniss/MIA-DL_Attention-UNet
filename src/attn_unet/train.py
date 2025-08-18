@@ -35,9 +35,9 @@ def batch_dice_from_logits(logits, labels, eps=1e-6):
 def main():
     # Run definitions:
     images_dir = globals().get("images_dir",
-                               r"/content/drive/MyDrive/MIL-DL_Attention-UNet/Task07_Pancreas_small/imagesTr")
+                               r"/content/drive/MyDrive/MIL-DL_Attention-UNet/Task09_Spleen/imagesTr")
     labels_dir = globals().get("labels_dir",
-                               r"/content/drive/MyDrive/MIL-DL_Attention-UNet/Task07_Pancreas_small/labelsTr")
+                               r"/content/drive/MyDrive/MIL-DL_Attention-UNet/Task07_Spleen/labelsTr")
 
     # Set model parameters
     k_slices = globals().get("k_slices", 1)
@@ -51,9 +51,11 @@ def main():
     # Get dataset
     train_ds = Stacks2D(images_dir, labels_dir, k_slices=k_slices, split='train')
     val_ds = Stacks2D(images_dir, labels_dir, k_slices=k_slices, split='val')
+    print("Datasets OK:", len(train_ds), len(val_ds))
 
     dl_tr = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0)
     dl_va = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0)
+
 
     # set model, optimizer scheduler
     device = "cuda" if torch.cuda.is_available() else "cpu"

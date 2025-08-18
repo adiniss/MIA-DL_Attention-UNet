@@ -103,10 +103,10 @@ class Stacks2D(Dataset):
             intr_mode = "bilinear"
 
         # Interpolate the resized tensor [1, 1, self.size, self.size] (align corners only for bilinear)
-        tensor = functional.interpolate(tensor,
-                                        size=(self.size, self.size),
-                                        mode=intr_mode,
-                                        align_corners=False if intr_mode == 'bilinear' else None)
+        if is_label:
+            tensor = functional.interpolate(tensor, size=(self.size, self.size), mode="nearest")
+        else:
+            tensor = functional.interpolate(tensor, size=(self.size, self.size), mode="bilinear", align_corners=False)
 
         # unwrap tensor back to numpy [size, size]
         resized_arr = tensor[0, 0].numpy()

@@ -20,6 +20,7 @@ class DiceLoss(nn.Module):
 
         return dice
 
+
 class FocalLossLogits(nn.Module):
     """
     Binary focal loss on BCE logits (for class imbalance)
@@ -35,7 +36,7 @@ class FocalLossLogits(nn.Module):
 
     def forward(self, logits, labels):
         # Compute binary cross entropy (after sigmoid)
-        BCE = functional.binary_cross_entropy_with_logits(logits, labels)
+        BCE = functional.binary_cross_entropy_with_logits(logits, labels, reduction='none')
 
         # pt = prediction if labels=1 else (1-prediction)
         prediction = torch.sigmoid(logits)
@@ -50,8 +51,7 @@ class FocalLossLogits(nn.Module):
             return focal.mean()
         elif self.reduction == 'sum':
             return focal.sum()
-        else:
-            return focal
+        return focal
 
 class FocalDice(nn.Module):
     def __init__(self, alpha=0.5, gamma=2.0, dice_weight=1.0, focal_weight=1.0):
