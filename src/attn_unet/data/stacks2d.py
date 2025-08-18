@@ -137,8 +137,8 @@ class Stacks2D(Dataset):
 
         if self.k == 1:
             # only resize is needed, by make sure it's 3D in the end
-            volume_stack = self.resize(intensity[..., z],
-                                       is_label=False)[None, ...]  # [1, H, W]
+            volume_stack = self.resize(intensity[..., z], is_label=False)[None, ...]         # [1,H,W]
+
         else:  # Generate stack of length k
             # slices list: if k=5 we need [z-2, z-1, z, z+1, z+2], clip to range [0, image_z_length]
             half_stack = self.k // 2
@@ -146,15 +146,15 @@ class Stacks2D(Dataset):
             slices_list = [np.clip(z + d, min_z, max_z) for d in range(-half_stack, half_stack + 1)]
 
             # Resize and stack the slices
-            volume_stack = np.stack([self.resize(intensity[..., zi], is_label=False) for zi in slices_list], 0)  # [k, H, W]
+            volume_stack = np.stack([self.resize(intensity[..., zi], False) for zi in slices_list], 0)
 
         # Resize label map for the chosen z slice
         slice_label = self.resize(label[..., z], is_label=True).astype(np.float32)  # [H, W], center slice labels
         slice_label = (slice_label > 0.5).astype(np.float32)
 
         # Convert to equal dim tensors
-        volume_stack = torch.from_numpy(volume_stack)  # [k, H, W]
-        slice_label = torch.from_numpy(slice_label)[None, ...]  # [1, H, W]
+        volume_stack = torch.from_numpy(volume_stack).float()  # [k, H, W]
+        slice_label = torch.from_numpy(slice_label)[None, ...].float()  # [1, H, W]
 
         #todo when adding data augmentation for train set
         #if getattr(self, "split", None) == 'train':

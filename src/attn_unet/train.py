@@ -7,9 +7,9 @@ from attn_unet.losses.focaldice import FocalDice
 
 
 def batch_dice_from_logits(logits, labels, eps=1e-6):
-    # make sure it's the expected shape (N, 1, H, W)
+    # logits: [B,1,H,W] expected; labels: [B,1,H,W] or [B,H,W]
     if labels.ndim == 3:
-        labels = labels.unsqueeze(1)         # [B,1,H,W]
+        labels = labels.unsqueeze(1)                # [B,1,H,W]
     elif labels.ndim != 4:
         raise ValueError(f"labels ndim={labels.ndim}, expected 3 or 4")
 
@@ -20,16 +20,16 @@ def batch_dice_from_logits(logits, labels, eps=1e-6):
         raise ValueError(f"logits C={logits.shape[1]}, expected 1")
 
     if labels.shape[1] != 1:
-        labels = labels[:, :1]
+        labels = labels[:, :1]                      # keep first channel if needed
 
     labels = labels.float()
     probas = torch.sigmoid(logits)
     predictions = (probas > 0.5).float()
 
-    # todo verify dice
     dice_num = (predictions * labels).sum(dim=(1, 2, 3))
     dice_den = predictions.sum(dim=(1, 2, 3)) + labels.sum(dim=(1, 2, 3))
     return ((2.0 * dice_num + eps) / (dice_den + eps)).mean().item()
+
 
 
 def main():
@@ -37,7 +37,7 @@ def main():
     images_dir = globals().get("images_dir",
                                r"/content/drive/MyDrive/MIL-DL_Attention-UNet/Task09_Spleen/imagesTr")
     labels_dir = globals().get("labels_dir",
-                               r"/content/drive/MyDrive/MIL-DL_Attention-UNet/Task07_Spleen/labelsTr")
+                               r"/content/drive/MyDrive/MIL-DL_Attention-UNet/Task09_Spleen/labelsTr")
 
     # Set model parameters
     k_slices = globals().get("k_slices", 1)
@@ -73,7 +73,8 @@ def main():
     # start training
     for epoch in range(max_epochs):
         model.train();
-        tr_loss = 0.0
+        tr_loss_sum = 0.0
+        n = 0
         for X, y in dl_tr:
             X, y = X.to(device), y.to(device)
             opt.zero_grad()
@@ -81,8 +82,9 @@ def main():
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
-            tr_loss += loss.item()
-        tr_loss /= max(len(dl_tr), 1)
+            tr_loss_sum += loss.item() * X.size()
+            n += X.size(0)
+        tr_loss = tr_loss_sum / max(n, 1)
 
         model.eval();
         va_loss_sum = 0.0;
@@ -99,9 +101,11 @@ def main():
         va_dice = va_dice_sum / max(n, 1)
 
         sched.step(va_loss)
-        print(f"Epoch {epoch} | train {tr_loss:.3f} | val {va_loss:.3f} | dice {va_dice:.3f}        l_r = {sched.get_last_lr()[0]}")
+        current_lr = opt.param_groups[0]['lr']
+        print(f"Epoch {epoch} | train {tr_loss:.3f} | val {va_loss:.3f} | dice {va_dice:.3f}        l_r = {current_lr}")
 
-        if va_loss < best_loss - 1e-4:
+        # consider deleting
+        if va_loss <= best_loss - 1e-4:
             best_loss, best_epoch, best_dice = va_loss, epoch, va_dice
         if epoch - best_epoch >= patience:
             print(f"Early stop @ {epoch} (best {best_loss:.3f} at {best_epoch})")
