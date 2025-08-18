@@ -65,7 +65,10 @@ class MultiHeadAttentionGate(nn.Module):
         heads_logits = self.psi(alpha)
         heads_logits = self.head_dropout(heads_logits)
 
-        # Apply softmax to get competition between heads for each pixel
+        # Apply temperature softmax to get competition between heads for each pixel
+        # exp(logits/tau) / sum(exp(logits/tau)) -> tau = 1 is straight up sofmax
+        # high temp -> more uniform softmax output
+        # low temp -> sharper logits dist
         heads = (heads_logits / max(self.tau, 1e-6)).softmax(dim=1)
 
         # Combine to a single head map and apply sigmoid

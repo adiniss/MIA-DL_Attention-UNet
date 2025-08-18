@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 from attn_unet.data.stacks2d import Stacks2D
 from attn_unet.models.atten_unet import AttentionUNet
 from attn_unet.losses.dicece import DiceCE
+from attn_unet.losses.focaldice import FocalDice
 
 
 def batch_dice_from_logits(logits, labels, eps=1e-6):
@@ -46,7 +47,10 @@ def main():
     # set model, optimizer scheduler
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = AttentionUNet(in_channels=k_slices, num_heads=heads).to(device)
-    loss_fn = DiceCE()
+    # loss_fn = DiceCE()
+    # Testing Focal dice
+    # test alpha in range 0.6-0.9 todo
+    loss_fn = FocalDice(alpha=0.75, gamma=2.0, dice_weight=1.0, focal_weight=1.0)
     opt = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=1)
 
