@@ -8,10 +8,21 @@ from attn_unet.losses.focaldice import FocalDice
 
 def batch_dice_from_logits(logits, labels, eps=1e-6):
     # make sure it's the expected shape (N, 1, H, W)
-    assert labels.ndim == 4 and labels.shape[1] == 1
-    labels = labels.float()
+    if labels.ndim == 3:
+        labels = labels.unsqueeze(1)         # [B,1,H,W]
+    elif labels.ndim != 4:
+        raise ValueError(f"labels ndim={labels.ndim}, expected 3 or 4")
 
-    assert logits.shape[1] == 1
+    if logits.ndim != 4:
+        raise ValueError(f"logits ndim={logits.ndim}, expected 4")
+
+    if logits.shape[1] != 1:
+        raise ValueError(f"logits C={logits.shape[1]}, expected 1")
+
+    if labels.shape[1] != 1:
+        labels = labels[:, :1]
+
+    labels = labels.float()
     probas = torch.sigmoid(logits)
     predictions = (probas > 0.5).float()
 

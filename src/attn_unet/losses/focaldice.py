@@ -1,4 +1,6 @@
 import torch, torch.nn as nn
+import torch.nn.functional as functional
+
 
 class DiceLoss(nn.Module):
     """
@@ -13,7 +15,7 @@ class DiceLoss(nn.Module):
         # Compute dice loss
         prediction = torch.sigmoid(logits)
         dice_num = 2.0 * (prediction * labels).sum(dim=(2, 3))
-        dice_den = (prediction * prediction + labels * labels).sum(dim=(2, 3)) + eps
+        dice_den = (prediction * prediction + labels * labels).sum(dim=(2, 3)) + self.eps
         dice = 1.0 - (dice_num / dice_den).mean()
 
         return dice
@@ -26,13 +28,14 @@ class FocalLossLogits(nn.Module):
     """
 
     def __init__(self, alpha=0.5, gamma=2.0, reduction='mean'):
+        super().__init__()
         self.alpha = alpha
         self.gamma = gamma  # gamma = 0 -> BCE
         self.reduction = reduction
 
     def forward(self, logits, labels):
         # Compute binary cross entropy (after sigmoid)
-        BCE = nn.BCEWithLogitsLoss(logits, labels)
+        BCE = functional.binary_cross_entropy_with_logits(logits, labels)
 
         # pt = prediction if labels=1 else (1-prediction)
         prediction = torch.sigmoid(logits)
