@@ -139,7 +139,7 @@ class Stacks2D(Dataset):
         resized_arr = tensor[0, 0].numpy()
         return resized_arr
 
-    def random_augnemtation(self, volume, label):
+    def random_augmentation(self, volume, label):
         '''
         :param volume: [k, H, W]
         :param label: [1, H, W] for the center slice, values 0 or 1
@@ -157,7 +157,7 @@ class Stacks2D(Dataset):
         if rng.rand() < 0.2:
             bias_int = rng.uniform(-0.05, 0.05)
             gain_int = rng.uniform(0.9, 1.1)
-            volume = torch.clamp(volume * gain_int + bias_int)
+            volume = torch.clamp(volume * gain_int + bias_int, min=0.0, max=1.0)
 
         # todo add rotation/blur?
 
@@ -209,6 +209,8 @@ class Stacks2D(Dataset):
 
         # Augment
         if self.augment:
-            volume_stack, slice_label = self.random_augnemtation(volume_stack, slice_label)
+            volume_stack, slice_label = self.random_augmentation(volume_stack, slice_label)
+            volume_stack = volume_stack.float().contiguous()  # [k,H,W]
+            slice_label = (slice_label > 0.5).float().contiguous()  # [1,H,W] with {0,1}
 
         return volume_stack, slice_label
