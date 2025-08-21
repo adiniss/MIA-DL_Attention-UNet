@@ -31,6 +31,21 @@ def binarize_labels(arr):
     # Unite the anatomy labels so we get a segmentation map
     return (arr > 0).astype(np.uint8)
 
+def normalize_img(volume, clip_percent=(1.0, 99.0), eps=1e-6):
+    volume_data = volume.astype(np.float32)
+    lo, hi = np.percentile(volume_data, clip_percent)
+
+    # for normalization issues:
+    if hi <= lo:
+        lo, hi = volume_data.min(), volume_data.max()
+
+    # clip data
+    volume_data = np.clip(volume_data, lo, hi)
+
+    # normalize
+    volume_data = (volume_data-lo) / max(hi - lo, eps)
+
+    return volume_data
 
 class Stacks2D(Dataset):
     """
@@ -39,10 +54,15 @@ class Stacks2D(Dataset):
     def __init__(self,
                  img_dir, label_dir,
                  img_size=256, k_slices=1,  # k=1 -> 2D slice, k>1 -> stacks of 2D slices
-                 split='train', split_ratio=(0.8, 0.1, 0.1), seed=3360033):
+                 split='train', split_ratio=(0.8, 0.1, 0.1), seed=3360033,
+                 augment = False):
+
+        super().__init__()
 
         self.k = k_slices
         self.size = img_size
+        self.split = split
+        self.augment = augment and (split == "train") # allow only for train set
 
         # Get images (NifTI format) and labels
         imgs = sorted(glob.glob(os.path.join(img_dir, '*.nii*')))
@@ -50,41 +70,53 @@ class Stacks2D(Dataset):
         # Check for missing labels
         assert all(os.path.exists(lab) for lab in labels), "Missing labels"
 
-        # Shuffle at volume level
+        # Shuffle and split at volume level
         rng = (np.random.RandomState(seed))
         idx = rng.permutation(len(imgs))
-        n_tr, n_va = int(len(idx) * split_ratio[0]), int(len(idx) * split_ratio[1])
 
-        if split == 'train':
-            selection = idx[:n_tr]
-        elif split == 'val':
-            selection = idx[n_tr:n_tr + n_va]
-        else:
-            selection = idx[n_tr + n_va:]
+        # Get ratios
+        r_tr, r_va, r_test = split_ratio
+
+        # Get rounded counts, and make sure none are empty
+        n_tr = int(round(len(imgs) * r_tr))
+        n_va = int(round(len(imgs) * r_va))
+        n_te = max(len(imgs) - n_tr - n_va, 0)
+
+        # Make sure non empty sets for non zero ratios
+        if len(imgs):
+            if r_tr > 0 and n_tr == 0:
+                n_tr = 1
+            if r_va > 0 and n_va == 0:
+                n_va = 1
+
+        # Make sure we don't take too many volumes:
+        overflow = max(n_tr + n_va - len(imgs), 0)
+        if overflow:
+            remove = min(overflow, n_va)
+            n_va -= remove
+            overflow -= remove
+            if overflow > 0:  # still need to remove
+                n_tr = max(n_tr - n_va, 0)
+        n_te = max(len(imgs) - n_tr - n_va, 0)
+
+        # selection indexes
+        i_tr = idx[:n_tr]
+        i_va = idx[n_tr : n_tr + n_va]
+        i_te = idx[n_tr + n_va : n_tr + n_va + n_te]
+
+        selection = {"train": i_tr, "val": i_va, "test": i_te}[split]
 
         # Define self.items to hold a list of (volume, label) tuples
         self.items = [(imgs[i], labels[i]) for i in selection]
 
-        # Find what z values are relevant (not blank background) - what slices should we use
-        # Store in self.slice_index as (path_img, path_lab, z) list
+        # Store all slices self.slice_index as (path_img, path_lab, z) list
         self.slice_index = []
         for item_volume, item_label in self.items:
-            voxel_volume = nib.load(item_volume).get_fdata()
+            volume_z_dim = nib.load(item_volume).shape[-1]
 
-            for z_idx in range(voxel_volume.shape[2]):
+            for z_idx in range(volume_z_dim):
                 self.slice_index.append((item_volume, item_label, z_idx))
 
-            # previous version to include only non empty slices
-            # # Get data using nibabel
-            # intensity_data = nib.load(item_volume).get_fdata().astype(np.float32)
-            # label_data = nib.load(item_label).get_fdata().astype(np.uint8)
-            #
-            # # Go over the z axis and check for informational labels
-            # for z in range(intensity_data.shape[2]):
-            #     if label_data[..., z].sum() > 0:
-            #         # If non-zero, append the specific
-            #         self.slice_index.append((item_volume, item_label, z))
-        # print(f"{split}: {len(self.slice_index)} slices")
         print(f"{split}: {len(self.slice_index)} slices (all possible slices)")
 
     def resize(self, arr, is_label=False):
@@ -97,11 +129,6 @@ class Stacks2D(Dataset):
         # Convert to PyTorch tensor and add new axes in the beginning since PyTorch expects 4D [1, 1, H, W]
         tensor = torch.from_numpy(arr)[None, None, ...]
 
-        if is_label:
-            intr_mode = "nearest"
-        else:
-            intr_mode = "bilinear"
-
         # Interpolate the resized tensor [1, 1, self.size, self.size] (align corners only for bilinear)
         if is_label:
             tensor = functional.interpolate(tensor, size=(self.size, self.size), mode="nearest")
@@ -111,6 +138,30 @@ class Stacks2D(Dataset):
         # unwrap tensor back to numpy [size, size]
         resized_arr = tensor[0, 0].numpy()
         return resized_arr
+
+    def random_augnemtation(self, volume, label):
+        '''
+        :param volume: [k, H, W]
+        :param label: [1, H, W] for the center slice, values 0 or 1
+        '''
+
+        rng = np.random
+        k, H, W = volume.shape
+
+        # Flip width 50:50
+        if rng.rand() < 0.5:
+            volume = torch.flip(volume, dims=[2])
+            label = torch.flip(label, dims=[2])
+
+        # Intensity noise 20:80
+        if rng.rand() < 0.2:
+            bias_int = rng.uniform(-0.05, 0.05)
+            gain_int = rng.uniform(0.9, 1.1)
+            volume = torch.clamp(volume * gain_int + bias_int)
+
+        # todo add rotation/blur?
+
+        return volume, label
 
     def __len__(self):
         """
@@ -133,7 +184,7 @@ class Stacks2D(Dataset):
 
         # Load intensity and clip and normalize intensity
         intensity = nib.load(path_img).get_fdata().astype(np.float32)
-        intensity = clip_norm_HU(intensity)
+        intensity = normalize_img(intensity)
 
         if self.k == 1:
             # only resize is needed, by make sure it's 3D in the end
@@ -156,8 +207,8 @@ class Stacks2D(Dataset):
         volume_stack = torch.from_numpy(volume_stack).float()  # [k, H, W]
         slice_label = torch.from_numpy(slice_label)[None, ...].float()  # [1, H, W]
 
-        #todo when adding data augmentation for train set
-        #if getattr(self, "split", None) == 'train':
-            # volume_stack, slice_label = self.augment(volume_stack, slice_label)
+        # Augment
+        if self.augment:
+            volume_stack, slice_label = self.random_augnemtation(volume_stack, slice_label)
 
         return volume_stack, slice_label

@@ -31,7 +31,6 @@ def batch_dice_from_logits(logits, labels, eps=1e-6):
     return ((2.0 * dice_num + eps) / (dice_den + eps)).mean().item()
 
 
-
 def main():
     # Run definitions:
     images_dir = globals().get("images_dir",
@@ -43,27 +42,39 @@ def main():
     k_slices = globals().get("k_slices", 1)
     heads = globals().get("heads", 1)
     batch_size = globals().get("batch_size", 4)
+    split_ratio = globals().get("split_ratio", (0.8, 0.1, 0.1))
     max_epochs = globals().get("epochs", 12)
-    patience = globals().get("patience", 2)  # for scheduler
     learning_rate = globals().get("learning_rate", 1e-3)
     weight_decay = globals().get("weight_decay", 1e-4)  # L2 reg
+    seed = globals().get("seed", 3360033)
+
+    torch.manual_seed(seed)
 
     # Get dataset
-    train_ds = Stacks2D(images_dir, labels_dir, k_slices=k_slices, split='train')
-    val_ds = Stacks2D(images_dir, labels_dir, k_slices=k_slices, split='val')
-    print("Datasets OK:", len(train_ds), len(val_ds))
+    train_ds = Stacks2D(images_dir, labels_dir,
+                        k_slices=k_slices,
+                        split='train', split_ratio=split_ratio,
+                        seed=seed, augment=True)
+    val_ds = Stacks2D(images_dir, labels_dir,
+                      k_slices=k_slices,
+                      split='val', split_ratio=split_ratio,
+                      seed=seed, augment=False)
+    if len(train_ds) == 0:
+        raise RuntimeError("Empty train dataset after split. Check paths/split_ratio.")
 
     dl_tr = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0)
     dl_va = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0)
 
-
-    # set model, optimizer scheduler
+    # Set Model
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = AttentionUNet(in_channels=k_slices, num_heads=heads).to(device)
+
+    # Set Loss
     # loss_fn = DiceCE()
-    # Testing Focal dice
-    # test alpha in range 0.6-0.9 todo
+    # Testing Focal dice, test alpha in range 0.6-0.9 todo
     loss_fn = FocalDice(alpha=0.75, gamma=2.0, dice_weight=1.0, focal_weight=1.0)
+
+    # Set Optimizer
     opt = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=1)
 
@@ -72,7 +83,7 @@ def main():
 
     # start training
     for epoch in range(max_epochs):
-        model.train();
+        model.train()
         tr_loss_sum = 0.0
         n = 0
         for X, y in dl_tr:
@@ -82,11 +93,12 @@ def main():
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
-            tr_loss_sum += loss.item() * X.size()
+            tr_loss_sum += loss.item() * X.size(0)
             n += X.size(0)
         tr_loss = tr_loss_sum / max(n, 1)
 
-        model.eval();
+        # validate
+        model.eval()
         va_loss_sum = 0.0;
         va_dice_sum = 0.0;
         n = 0
@@ -102,19 +114,17 @@ def main():
 
         sched.step(va_loss)
         current_lr = opt.param_groups[0]['lr']
-        print(f"Epoch {epoch} | train {tr_loss:.3f} | val {va_loss:.3f} | dice {va_dice:.3f}        l_r = {current_lr}")
+        print(f"Epoch {epoch} | train {tr_loss:.4f} | val {va_loss:.4f} | dice {va_dice:.4f} | l_r = {current_lr:.3e}")
 
-        # consider deleting
-        if va_loss <= best_loss - 1e-4:
-            best_loss, best_epoch, best_dice = va_loss, epoch, va_dice
-        if epoch - best_epoch >= patience:
-            print(f"Early stop @ {epoch} (best {best_loss:.3f} at {best_epoch})")
-            break
+        if va_loss < best_loss:
+            best_loss = va_loss
+            torch.save(model.state_dict(), "best_loss.pt")
 
     params = sum(p.numel() for p in model.parameters())
+    print(f"Done. Best val loss: {best_loss:.4f} | Params: {params/1e6:.2f}M")
+
     return {"best_val_loss": best_loss, "best_val_dice": best_dice,
             "best_epoch": best_epoch, "params": params}
-
 
 if __name__ == "__main__":
     main()
