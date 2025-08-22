@@ -53,12 +53,12 @@ class Stacks2D(Dataset):
     """
     def __init__(self,
                  img_dir, label_dir,
-                 img_size=256, k_slices=1,  # k=1 -> 2D slice, k>1 -> stacks of 2D slices
+                 img_size=224, k_slices=1,  # k=1 -> 2D slice, k>1 -> stacks of 2D slices
                  split='train', split_ratio=(0.8, 0.1, 0.1), seed=3360033,
-                 augment = False):
+                 augment=False):
 
         super().__init__()
-
+        self._cache = {}
         self.k = k_slices
         self.size = img_size
         self.split = split
@@ -117,7 +117,11 @@ class Stacks2D(Dataset):
             for z_idx in range(volume_z_dim):
                 self.slice_index.append((item_volume, item_label, z_idx))
 
-        print(f"{split}: {len(self.slice_index)} slices (all possible slices)")
+        if self.split == 'train': # sample the training slice to not overwhelm training
+            stride = 2  # todo try 2 or 3
+            self.slice_index = self.slice_index[::stride]
+
+        print(f"{split}: {len(self.slice_index)} slices")
 
     def resize(self, arr, is_label=False):
         """
@@ -178,13 +182,16 @@ class Stacks2D(Dataset):
         """
         path_img, path_label, z = self.slice_index[i]
 
-        # Load labels and merge MSD maps to binary
-        label = nib.load(path_label).get_fdata().astype(np.uint8)
-        label = binarize_labels(label)
-
         # Load intensity and clip and normalize intensity
-        intensity = nib.load(path_img).get_fdata().astype(np.float32)
-        intensity = normalize_img(intensity)
+        if path_img not in self._cache:
+            self._cache[path_img] = normalize_img(nib.load(path_img).get_fdata().astype(np.float32))
+
+        # Load labels and merge MSD maps to binary
+        if path_label not in self._cache:
+            self._cache[path_label] = binarize_labels(nib.load(path_label).get_fdata().astype(np.uint8))
+
+        intensity = self._cache[path_img]
+        label = self._cache[path_label]
 
         if self.k == 1:
             # only resize is needed, by make sure it's 3D in the end

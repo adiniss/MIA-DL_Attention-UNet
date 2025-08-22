@@ -43,12 +43,13 @@ def main():
     heads = globals().get("heads", 1)
     batch_size = globals().get("batch_size", 4)
     split_ratio = globals().get("split_ratio", (0.8, 0.1, 0.1))
-    max_epochs = globals().get("epochs", 12)
+    max_epochs = globals().get("epochs", 6)
     learning_rate = globals().get("learning_rate", 1e-3)
     weight_decay = globals().get("weight_decay", 1e-4)  # L2 reg
     seed = globals().get("seed", 3360033)
 
     torch.manual_seed(seed)
+    torch.backends.cudnn.benchmark = True
 
     # Get dataset
     train_ds = Stacks2D(images_dir, labels_dir,
@@ -59,11 +60,14 @@ def main():
                       k_slices=k_slices,
                       split='val', split_ratio=split_ratio,
                       seed=seed, augment=False)
+
     if len(train_ds) == 0:
         raise RuntimeError("Empty train dataset after split. Check paths/split_ratio.")
 
-    dl_tr = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0)
-    dl_va = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0)
+    dl_tr = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                       pin_memory=True, persistent_workers=True, prefetch_factor=2)
+    dl_va = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
+                       pin_memory=True, persistent_workers=True, prefetch_factor=2)
 
     # Set Model
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -82,6 +86,8 @@ def main():
     best_loss, best_epoch, best_dice = float("inf"), -1, 0.0
 
     # start training
+    scaler = torch.cuda.amp.GradScaler(enabled=(device=='cuda'))
+
     for epoch in range(max_epochs):
         model.train()
         tr_loss_sum = 0.0
@@ -89,10 +95,13 @@ def main():
         for X, y in dl_tr:
             X, y = X.to(device), y.to(device)
             opt.zero_grad()
-            loss = loss_fn(model(X), y)
-            loss.backward()
+            with torch.cuda.amp.autocast(enabled=(device == 'cuda')):
+                logits = model(X)
+                loss = loss_fn(logits, y)
+            scaler.scale(loss).backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            opt.step()
+            scaler.step(opt)
+            scaler.update()
             tr_loss_sum += loss.item() * X.size(0)
             n += X.size(0)
         tr_loss = tr_loss_sum / max(n, 1)

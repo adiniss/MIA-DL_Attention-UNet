@@ -32,7 +32,7 @@ class AttentionUNet(nn.Module):
     """
     def __init__(self,
                  in_channels=1, out_channels=1,
-                 base_ch=32, num_heads=1):
+                 base_ch=16, num_heads=1):
         super().__init__()
         c = base_ch
 
