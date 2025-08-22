@@ -180,44 +180,80 @@ class Stacks2D(Dataset):
         :param i:
         :return: volume_stack [k, H, W], slice_label [1, H, W] (only for chosen slice)
         """
-        path_img, path_label, z = self.slice_index[i]
+        img_p, lab_p, z = self.slice_index[i]
 
-        # Load intensity and clip and normalize intensity
-        if path_img not in self._cache:
-            self._cache[path_img] = normalize_img(nib.load(path_img).get_fdata().astype(np.float32))
+        # Use nib proxies (no full volume in RAM)
+        img_proxy = nib.load(img_p).dataobj
+        lab_proxy = nib.load(lab_p).dataobj
 
-        # Load labels and merge MSD maps to binary
-        if path_label not in self._cache:
-            self._cache[path_label] = binarize_labels(nib.load(path_label).get_fdata().astype(np.uint8))
-
-        intensity = self._cache[path_img]
-        label = self._cache[path_label]
-
+        # gather z indices for the stack (clamped at edges)
         if self.k == 1:
-            # only resize is needed, by make sure it's 3D in the end
-            volume_stack = self.resize(intensity[..., z], is_label=False)[None, ...]         # [1,H,W]
+            idxs = [z]
+        else:
+            half = self.k // 2
+            Z = img_proxy.shape[-1]
+            idxs = [int(np.clip(z + d, 0, Z - 1)) for d in range(-half, half + 1)]
 
-        else:  # Generate stack of length k
-            # slices list: if k=5 we need [z-2, z-1, z, z+1, z+2], clip to range [0, image_z_length]
-            half_stack = self.k // 2
-            min_z, max_z = 0, intensity.shape[2] - 1
-            slices_list = [np.clip(z + d, min_z, max_z) for d in range(-half_stack, half_stack + 1)]
+        # build image stack slice-by-slice, normalize each slice
+        stack = []
+        for zi in idxs:
+            slc = np.array(img_proxy[..., zi], dtype=np.float32)  # read one 2D slice
+            slc = normalize_img(slc)  # per-slice percentile norm
+            slc = self.resize(slc, is_label=False)
+            stack.append(slc)
+        stack = np.stack(stack, axis=0)  # [k,H,W]
 
-            # Resize and stack the slices
-            volume_stack = np.stack([self.resize(intensity[..., zi], False) for zi in slices_list], 0)
+        # label for the central slice only
+        y2d = np.array(lab_proxy[..., z], dtype=np.uint8)
+        y2d = (y2d > 0).astype(np.float32)
+        y2d = self.resize(y2d, is_label=True)
+        y2d = (y2d > 0.5).astype(np.float32)  # ensure {0,1}
 
-        # Resize label map for the chosen z slice
-        slice_label = self.resize(label[..., z], is_label=True).astype(np.float32)  # [H, W], center slice labels
-        slice_label = (slice_label > 0.5).astype(np.float32)
+        X = torch.from_numpy(stack).float()  # [k,H,W]
+        y = torch.from_numpy(y2d)[None].float()  # [1,H,W]
 
-        # Convert to equal dim tensors
-        volume_stack = torch.from_numpy(volume_stack).float()  # [k, H, W]
-        slice_label = torch.from_numpy(slice_label)[None, ...].float()  # [1, H, W]
-
-        # Augment
         if self.augment:
-            volume_stack, slice_label = self.random_augmentation(volume_stack, slice_label)
-            volume_stack = volume_stack.float().contiguous()  # [k,H,W]
-            slice_label = (slice_label > 0.5).float().contiguous()  # [1,H,W] with {0,1}
+            X, y = self.random_augmentation(X, y)
 
-        return volume_stack, slice_label
+        return X, y
+        # path_img, path_label, z = self.slice_index[i]
+        #
+        # # Load intensity and clip and normalize intensity
+        # if path_img not in self._cache:
+        #     self._cache[path_img] = normalize_img(nib.load(path_img).get_fdata().astype(np.float32))
+        #
+        # # Load labels and merge MSD maps to binary
+        # if path_label not in self._cache:
+        #     self._cache[path_label] = binarize_labels(nib.load(path_label).get_fdata().astype(np.uint8))
+        #
+        # intensity = self._cache[path_img]
+        # label = self._cache[path_label]
+        #
+        # if self.k == 1:
+        #     # only resize is needed, by make sure it's 3D in the end
+        #     volume_stack = self.resize(intensity[..., z], is_label=False)[None, ...]         # [1,H,W]
+        #
+        # else:  # Generate stack of length k
+        #     # slices list: if k=5 we need [z-2, z-1, z, z+1, z+2], clip to range [0, image_z_length]
+        #     half_stack = self.k // 2
+        #     min_z, max_z = 0, intensity.shape[2] - 1
+        #     slices_list = [np.clip(z + d, min_z, max_z) for d in range(-half_stack, half_stack + 1)]
+        #
+        #     # Resize and stack the slices
+        #     volume_stack = np.stack([self.resize(intensity[..., zi], False) for zi in slices_list], 0)
+        #
+        # # Resize label map for the chosen z slice
+        # slice_label = self.resize(label[..., z], is_label=True).astype(np.float32)  # [H, W], center slice labels
+        # slice_label = (slice_label > 0.5).astype(np.float32)
+        #
+        # # Convert to equal dim tensors
+        # volume_stack = torch.from_numpy(volume_stack).float()  # [k, H, W]
+        # slice_label = torch.from_numpy(slice_label)[None, ...].float()  # [1, H, W]
+        #
+        # # Augment
+        # if self.augment:
+        #     volume_stack, slice_label = self.random_augmentation(volume_stack, slice_label)
+        #     volume_stack = volume_stack.float().contiguous()  # [k,H,W]
+        #     slice_label = (slice_label > 0.5).float().contiguous()  # [1,H,W] with {0,1}
+        #
+        # return volume_stack, slice_label

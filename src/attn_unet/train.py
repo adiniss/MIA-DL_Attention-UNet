@@ -51,7 +51,7 @@ def main():
     torch.manual_seed(seed)
     torch.backends.cudnn.benchmark = True
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    workers = 2
+    workers = 0
 
     # Get dataset
     train_ds = Stacks2D(images_dir, labels_dir,
@@ -67,12 +67,10 @@ def main():
         raise RuntimeError("Empty train dataset after split. Check paths/split_ratio.")
 
     dl_tr = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                       num_workers=workers, pin_memory=(device=="cuda"),
-                       persistent_workers=True, prefetch_factor=2)
+                       num_workers=workers, pin_memory=False)
 
     dl_va = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
-                       num_workers=workers, pin_memory=(device=="cuda"),
-                       persistent_workers=True, prefetch_factor=2)
+                       num_workers=workers, pin_memory=False)
 
     # Set Model
     device = "cuda" if torch.cuda.is_available() else "cpu"
