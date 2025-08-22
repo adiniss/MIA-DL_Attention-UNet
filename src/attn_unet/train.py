@@ -91,7 +91,7 @@ def main():
     best_loss, best_epoch, best_dice = float("inf"), -1, 0.0
 
     # start training
-    scaler = torch.cuda.amp.GradScaler(enabled=(device=='cuda'))
+    scaler = torch.amp.GradScaler("cuda", enabled=(device=='cuda'))
 
     for epoch in range(max_epochs):
         model.train()
@@ -100,7 +100,7 @@ def main():
         for X, y in dl_tr:
             X, y = X.to(device), y.to(device)
             opt.zero_grad()
-            with torch.cuda.amp.autocast(enabled=(device == 'cuda')):
+            with torch.amp.autocast("cuda", enabled=(device == 'cuda')):
                 logits = model(X)
                 loss = loss_fn(logits, y)
             scaler.scale(loss).backward()
